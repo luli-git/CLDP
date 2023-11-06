@@ -1,0 +1,17 @@
+# config.yaml
+train:
+  num_epochs: 10
+  learning_rate: 0.0001
+
+model:
+  checkpoints_folder: "MolCLR/ckpt/pretrained_gin/checkpoints"
+  molecule_model_checkpoint: "model.pth"
+
+data:
+  data_csv_path: "merged_description_smiles.csv"
+  batch_size: 20
+  shuffle: true
+
+resume:
+  text: nan # can be path of pth file is resume
+  molecule: nan # can be path of pth file is resume
