@@ -11,6 +11,7 @@ def gather_features(**kwargs):
 class ClipLoss(nn.Module):
     def __init__(
         self,
+        device="cuda",
         local_loss=False,
         gather_with_grad=False,
         cache_labels=False,
@@ -20,7 +21,7 @@ class ClipLoss(nn.Module):
         mlp_loss=False,
         weight_loss_kappa=0,
     ):
-        super().__init__()
+        super(ClipLoss, self).__init__()
         self.local_loss = local_loss
         self.gather_with_grad = gather_with_grad
         self.cache_labels = cache_labels
@@ -33,21 +34,20 @@ class ClipLoss(nn.Module):
         # cache state
         self.prev_num_logits = 0
         self.labels = {}
-        self.logit_scale_d = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        self.logit_scale_t = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        # nn.init.constant_(self.logit_scale_d, np.log(1 / 0.07))
-        # nn.init.constant_(self.logit_scale_t, np.log(1 / 0.07))
+        self.logit_scale_d = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(device)
+        self.logit_scale_t = nn.Parameter(torch.ones([]) * np.log(1 / 0.07)).to(device)
+        # nn.init.constant_(self.self.logit_scale_d, np.log(1 / 0.07))
+        # nn.init.constant_(self.self.logit_scale_t, np.log(1 / 0.07))
 
     def forward(
         self,
         drug_features,
         text_features,
-        logit_scale_d,
-        logit_scale_t=None,
         drug_features_mlp=None,
         text_features_mlp=None,
     ):
-        device = drug_features.device
+        # self.logit_scale_d = self.self.logit_scale_d
+        # self.logit_scale_t = self.self.logit_scale_t
         if self.mlp_loss:
             if self.world_size > 1:
                 (
@@ -69,31 +69,39 @@ class ClipLoss(nn.Module):
                 )
                 if self.local_loss:
                     a_logits_per_drug = (
-                        logit_scale_d * drug_features @ all_text_features_mlp.T
+                        self.logit_scale_d * drug_features @ all_text_features_mlp.T
                     )
                     a_logits_per_text = (
-                        logit_scale_d * text_features_mlp @ all_drug_features.T
+                        self.logit_scale_d * text_features_mlp @ all_drug_features.T
                     )
                     t_logits_per_drug = (
-                        logit_scale_t * drug_features_mlp @ all_text_features.T
+                        self.logit_scale_t * drug_features_mlp @ all_text_features.T
                     )
                     t_logits_per_text = (
-                        logit_scale_t * text_features @ all_drug_features_mlp.T
+                        self.logit_scale_t * text_features @ all_drug_features_mlp.T
                     )
                 else:  # self.local_loss = False
                     a_logits_per_drug = (
-                        logit_scale_d * all_drug_features @ all_text_features_mlp.T
+                        self.logit_scale_d * all_drug_features @ all_text_features_mlp.T
                     )
                     a_logits_per_text = a_logits_per_drug.T
                     t_logits_per_drug = (
-                        logit_scale_t * all_drug_features_mlp @ all_text_features.T
+                        self.logit_scale_t * all_drug_features_mlp @ all_text_features.T
                     )
                     t_logits_per_text = t_logits_per_drug.T
             else:  # self.world_size = 1
-                a_logits_per_drug = logit_scale_d * drug_features @ text_features_mlp.T
-                a_logits_per_text = logit_scale_d * text_features_mlp @ drug_features.T
-                t_logits_per_drug = logit_scale_t * drug_features_mlp @ text_features.T
-                t_logits_per_text = logit_scale_t * text_features @ drug_features_mlp.T
+                a_logits_per_drug = (
+                    self.logit_scale_d * drug_features @ text_features_mlp.T
+                )
+                a_logits_per_text = (
+                    self.logit_scale_d * text_features_mlp @ drug_features.T
+                )
+                t_logits_per_drug = (
+                    self.logit_scale_t * drug_features_mlp @ text_features.T
+                )
+                t_logits_per_text = (
+                    self.logit_scale_t * text_features @ drug_features_mlp.T
+                )
 
             # calculated ground-truth and cache if enabled
             num_logits = a_logits_per_drug.shape[0]
@@ -150,19 +158,19 @@ class ClipLoss(nn.Module):
 
                 if self.local_loss:
                     logits_per_drug = (
-                        logit_scale_d * drug_features @ all_text_features.T
+                        self.logit_scale_d * drug_features @ all_text_features.T
                     )
                     logits_per_text = (
-                        logit_scale_d * text_features @ all_drug_features.T
+                        self.logit_scale_d * text_features @ all_drug_features.T
                     )
                 else:
                     logits_per_drug = (
-                        logit_scale_d * all_drug_features @ all_text_features.T
+                        self.logit_scale_d * all_drug_features @ all_text_features.T
                     )
                     logits_per_text = logits_per_drug.T
             else:  # self.world_size = 1
-                logits_per_drug = logit_scale_d * drug_features @ text_features.T
-                logits_per_text = logit_scale_d * text_features @ drug_features.T
+                logits_per_drug = self.logit_scale_d * drug_features @ text_features.T
+                logits_per_text = self.logit_scale_d * text_features @ drug_features.T
 
             # calculated ground-truth and cache if enabled
             num_logits = logits_per_drug.shape[0]

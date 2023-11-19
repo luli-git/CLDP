@@ -1,11 +1,30 @@
 # config.yaml
 train:
   num_epochs: 10
-  learning_rate: 0.0001
+  text_learning_rate: 0.0001
+  molecule_learning_rate: 0.0001
+  logit_scale_learning_rate: 0.0001
 
 model:
-  checkpoints_folder: "MolCLR/ckpt/pretrained_gin/checkpoints"
-  molecule_model_checkpoint: "model.pth"
+  MolCLR:
+    pretrained_folder: "MolCLR/ckpt/pretrained_gin/checkpoints"
+    pretrained_model: "model.pth"
+    num_layer: 5
+    emb_dim: 300
+    feat_dim: 512
+    drop_ratio: 0
+    pool: "mean"
+    pred_n_layer: 2
+    pred_act: "relu"
+    out_dim: 512
+    num_atom_type: 119
+    num_chirality_tag: 3
+  text:
+    tokenizer: "dmis-lab/biobert-base-cased-v1.1"
+    pretrained_model: "dmis-lab/biobert-base-cased-v1.1"
+    additional_hidden_size: 512
+    out_features: 512
+
 
 data:
   data_csv_path: "merged_description_smiles.csv"

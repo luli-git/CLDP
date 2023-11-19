@@ -7,13 +7,17 @@ from MolCLR.models.ginet_finetune import GINet
 from model import ContrastiveLearningWithBioBERT
 from config import config as args
 from utils import load_checkpoint
-from transformers import BertTokenizer, BertModel
+
+from models import GINet, BertMLPModel
+from loss import ClipLoss
 
 torch.backends.cudnn.deterministic = True
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 state_dict = torch.load(
-    os.path.join(args.model.checkpoints_folder, args.model.molecule_model_checkpoint),
+    os.path.join(
+        args.model.MolCLR.pretrained_folder, args.model.MolCLR.pretrained_model
+    ),
     map_location=device,
 )
 
@@ -24,28 +28,40 @@ state_dict = torch.load(
 dataset = MoleculeDatasetWrapper(args.data.batch_size, 1, 0.1, args.data.data_csv_path)
 dataloader = dataset.get_data_loaders()
 
+
 # Load the molecule model
-molecule_model = GINet("classification", pred_act="relu").to(device)
-molecule_model.load_my_state_dict(state_dict)
-# Load the tokenizer and model
-text_tokenizer = BertTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.1")
-text_model = BertModel.from_pretrained("dmis-lab/biobert-base-cased-v1.1").to(device)
-
-# Assuming you have already defined the molecule model and loaded the pretrained weights
-model = ContrastiveLearningWithBioBERT(
-    text_tokenizer, text_model, molecule_model, device
+molecule_model = GINet(args).to(device)
+not_loaded = molecule_model.load_my_state_dict(state_dict, freeze_loaded=True)
+print(
+    "The following parameters were not loaded from pretrained molecule model: ",
+    not_loaded,
 )
-
-optimizer = optim.Adam(model.text_model.parameters(), lr=args.train.learning_rate)
+# Load the tokenizer and model
+text_model = BertMLPModel(args, device)
 if args.resume.molecule and os.path.isfile(args.resume.molecule):
     print(f"Resuming training from {args.resume.molecule}")
-    model, start_epoch = load_checkpoint(args.resume.molecule, model, optimizer)
-    print(f"Resumed from epoch {start_epoch}")
+    molecule_state_dict = torch.load(args.resume.molecule)
+    molecule_model.load_state_dict(molecule_state_dict, strict=False)
 
 if args.resume.text and os.path.isfile(args.resume.text):
     print(f"Resuming training from {args.resume.text}")
-    start_epoch = load_checkpoint(args.resume.text, model, optimizer)
-    print(f"Resumed from epoch {start_epoch}")
+    text_state_dict = torch.load(args.resume.text)
+    text_model.load_state_dict(text_state_dict, strict=False)
+
+molecule_model.freeze_GIN(
+)
+text_model.freeze_bert()
+
+loss = ClipLoss(device=device, mlp_loss=False)
+text_head_optimizer = optim.Adam(
+    text_model.parameters(), lr=args.train.text_learning_rate
+)
+molecule_head_optimizer = optim.Adam(
+    molecule_model.parameters(), lr=args.train.molecule_learning_rate
+)
+logit_scale_optimizer = optim.Adam(
+    [loss.logit_scale_d, loss.logit_scale_t], lr=args.train.logit_scale_learning_rate
+)
 
 # Training loop
 for epoch in range(args.train.num_epochs):
@@ -53,16 +69,26 @@ for epoch in range(args.train.num_epochs):
     epoch_loss = 0.0
     for bn, batch in enumerate(dataloader):
         # Zero the gradients
-        optimizer.zero_grad()
+        text_head_optimizer.zero_grad()
+        molecule_head_optimizer.zero_grad()
+        logit_scale_optimizer.zero_grad()
         batch_molecules, batch_texts = batch["graphs"], batch["texts"]
+        batch_molecule_feat = molecule_model(batch_molecules)
+        batch_molecule_feat = batch_molecule_feat / batch_molecule_feat.norm(
+            dim=1, keepdim=True
+        )
+        batch_text_feat = text_model(batch_texts)
+        batch_text_feat = batch_text_feat / batch_text_feat.norm(dim=1, keepdim=True)
         # Compute the model's loss
-        loss = model(batch_texts, batch_molecules)
-        print(loss)
+        l = loss(batch_molecule_feat, batch_text_feat)
+        print(l)
         # Backpropagate the loss
-        loss.backward()
+        l.backward()
 
         # Update the model's weights
-        optimizer.step()
+        text_head_optimizer.step()
+        molecule_head_optimizer.step()
+        logit_scale_optimizer.step()
 
         # Accumulate the loss for monitoring
         epoch_loss += loss.item()
