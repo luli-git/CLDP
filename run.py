@@ -3,7 +3,6 @@ import torch.optim as optim
 from MolCLR.dataset.dataset import MoleculeDatasetWrapper
 from torch.utils.data import DataLoader
 import os
-from MolCLR.models.ginet_finetune import GINet
 from model import ContrastiveLearningWithBioBERT
 from config import config as args
 from utils import load_checkpoint
@@ -37,7 +36,7 @@ print(
     not_loaded,
 )
 # Load the tokenizer and model
-text_model = BertMLPModel(args, device)
+text_model = BertMLPModel(args, device).to(device)
 if args.resume.molecule and os.path.isfile(args.resume.molecule):
     print(f"Resuming training from {args.resume.molecule}")
     molecule_state_dict = torch.load(args.resume.molecule)
@@ -65,16 +64,20 @@ logit_scale_optimizer = optim.Adam(
 
 # Training loop
 for epoch in range(args.train.num_epochs):
-    print("here1")
+ 
     epoch_loss = 0.0
     for bn, batch in enumerate(dataloader):
+       
         # Zero the gradients
         text_head_optimizer.zero_grad()
         molecule_head_optimizer.zero_grad()
         logit_scale_optimizer.zero_grad()
         batch_molecules, batch_texts = batch["graphs"], batch["texts"]
+        batch_molecules = batch_molecules.to(device)
+        # batch_texts = batch_texts.to(device)
+
         batch_molecule_feat = molecule_model(batch_molecules)
-        batch_molecule_feat = batch_molecule_feat / batch_molecule_feat.norm(
+        batch_molecule_feat = batch_molecule_feat[1] / batch_molecule_feat[1].norm(
             dim=1, keepdim=True
         )
         batch_text_feat = text_model(batch_texts)
@@ -91,7 +94,7 @@ for epoch in range(args.train.num_epochs):
         logit_scale_optimizer.step()
 
         # Accumulate the loss for monitoring
-        epoch_loss += loss.item()
+        epoch_loss += l.item()
 
     # Print the average loss for the epoch
     print(

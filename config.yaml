@@ -24,11 +24,14 @@ model:
     pretrained_model: "dmis-lab/biobert-base-cased-v1.1"
     additional_hidden_size: 512
     out_features: 512
+  general: 
+    warmup: 2000
+    wandb_project_name: "cldp"
 
 
 data:
   data_csv_path: "merged_description_smiles.csv"
-  batch_size: 20
+  batch_size: 64
   shuffle: true
 
 resume:

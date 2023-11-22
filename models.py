@@ -114,10 +114,12 @@ class GINet(nn.Module):
         pred_head.append(nn.Linear(self.feat_dim // 2, args.model.MolCLR.out_dim))
         self.pred_head = nn.Sequential(*pred_head)
 
-    def forward(self, x, edge_index, edge_attr, batch, **kwargs):
-        # x = data.x
-        # edge_index = data.edge_index
-        # edge_attr = data.edge_attr
+    def forward(self,data, **kwargs):
+
+        x = data.x
+        edge_index = data.edge_index
+        edge_attr = data.edge_attr
+        batch = data.batch
 
         h = self.x_embedding1(x[:, 0]) + self.x_embedding2(x[:, 1])
 
@@ -170,7 +172,7 @@ class BertMLPModel(nn.Module):
             nn.ReLU(),
             nn.Linear(additional_hidden_size, out_features),
         )
-
+        self.device = device
     def forward(self, text):
         # Tokenize the input text
         encoded_input = self.text_tokenizer(
