@@ -24,9 +24,9 @@ model:
     pretrained_model: "dmis-lab/biobert-base-cased-v1.1"
     additional_hidden_size: 512
     out_features: 512
-  general: 
-    warmup: 2000
-    wandb_project_name: "cldp"
+ 
+warmup: 2000
+wandb_project_name: "cldp"
 
 
 data:

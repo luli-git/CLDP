@@ -1,15 +1,15 @@
+### import statements
 import torch
 import torch.optim as optim
 from MolCLR.dataset.dataset import MoleculeDatasetWrapper
-from torch.utils.data import DataLoader
 import os
-from model import ContrastiveLearningWithBioBERT
-from config import config as args
 from utils import load_checkpoint
-
+import wandb
 from models import GINet, BertMLPModel
 from loss import ClipLoss
+from config import config as args
 
+# Set the random seeds for reproducibility
 torch.backends.cudnn.deterministic = True
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -20,10 +20,7 @@ state_dict = torch.load(
     map_location=device,
 )
 
-
-# Test the DrugDataset
-# For demonstration purposes, I'm using placeholder paths. Replace with your actual paths.
-
+# Load the dataset
 dataset = MoleculeDatasetWrapper(args.data.batch_size, 1, 0.1, args.data.data_csv_path)
 dataloader = dataset.get_data_loaders()
 
@@ -36,7 +33,7 @@ print(
     not_loaded,
 )
 # Load the tokenizer and model
-text_model = BertMLPModel(args, device).to(device)
+text_model = BertMLPModel(args).to(device)
 if args.resume.molecule and os.path.isfile(args.resume.molecule):
     print(f"Resuming training from {args.resume.molecule}")
     molecule_state_dict = torch.load(args.resume.molecule)
@@ -47,8 +44,8 @@ if args.resume.text and os.path.isfile(args.resume.text):
     text_state_dict = torch.load(args.resume.text)
     text_model.load_state_dict(text_state_dict, strict=False)
 
-molecule_model.freeze_GIN(
-)
+# Freeze the weights of the pretrained models
+molecule_model.freeze_GIN()
 text_model.freeze_bert()
 
 loss = ClipLoss(device=device, mlp_loss=False)
@@ -61,13 +58,16 @@ molecule_head_optimizer = optim.Adam(
 logit_scale_optimizer = optim.Adam(
     [loss.logit_scale_d, loss.logit_scale_t], lr=args.train.logit_scale_learning_rate
 )
+wandb.init(project=args.wandb_project_name)
+wandb.config.batch_size = args.data.batch_size
+wandb.config.text_learning_rate = args.train.text_learning_rate
+wandb.config.molecule_learning_rate = args.train.molecule_learning_rate
+wandb.config.logit_scale_learning_rate = args.train.logit_scale_learning_rate
 
 # Training loop
 for epoch in range(args.train.num_epochs):
- 
     epoch_loss = 0.0
     for bn, batch in enumerate(dataloader):
-       
         # Zero the gradients
         text_head_optimizer.zero_grad()
         molecule_head_optimizer.zero_grad()
@@ -85,6 +85,7 @@ for epoch in range(args.train.num_epochs):
         # Compute the model's loss
         l = loss(batch_molecule_feat, batch_text_feat)
         print(l)
+
         # Backpropagate the loss
         l.backward()
 
@@ -95,6 +96,7 @@ for epoch in range(args.train.num_epochs):
 
         # Accumulate the loss for monitoring
         epoch_loss += l.item()
+        wandb.log({"epoch": epoch, "loss": epoch_loss, "loss_l": l.item()})
 
     # Print the average loss for the epoch
     print(
