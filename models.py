@@ -157,7 +157,7 @@ class GINet(nn.Module):
 
 
 class BertMLPModel(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, device):
         super(BertMLPModel, self).__init__()
         self.text_tokenizer = BertTokenizer.from_pretrained(args.model.text.tokenizer)
         self.text_model = BertModel.from_pretrained(args.model.text.pretrained_model)

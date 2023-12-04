@@ -33,7 +33,7 @@ print(
     not_loaded,
 )
 # Load the tokenizer and model
-text_model = BertMLPModel(args).to(device)
+text_model = BertMLPModel(args, device).to(device)
 if args.resume.molecule and os.path.isfile(args.resume.molecule):
     print(f"Resuming training from {args.resume.molecule}")
     molecule_state_dict = torch.load(args.resume.molecule)
