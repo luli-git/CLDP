@@ -1,13 +1,19 @@
 ### import statements
+from config import config as args
+
+if args.wandb:
+    import wandb
 import torch
 import torch.optim as optim
 from MolCLR.dataset.dataset import MoleculeDatasetWrapper
 import os
-from utils import load_checkpoint
-import wandb
+
+# from utils import load_checkpoint
+
+
 from models import GINet, BertMLPModel
 from loss import ClipLoss
-from config import config as args
+
 
 # Set the random seeds for reproducibility
 torch.backends.cudnn.deterministic = True
@@ -58,11 +64,12 @@ molecule_head_optimizer = optim.Adam(
 logit_scale_optimizer = optim.Adam(
     [loss.logit_scale_d, loss.logit_scale_t], lr=args.train.logit_scale_learning_rate
 )
-wandb.init(project=args.wandb_project_name)
-wandb.config.batch_size = args.data.batch_size
-wandb.config.text_learning_rate = args.train.text_learning_rate
-wandb.config.molecule_learning_rate = args.train.molecule_learning_rate
-wandb.config.logit_scale_learning_rate = args.train.logit_scale_learning_rate
+if args.wandb:
+    wandb.init(project=args.wandb_project_name)
+    wandb.config.batch_size = args.data.batch_size
+    wandb.config.text_learning_rate = args.train.text_learning_rate
+    wandb.config.molecule_learning_rate = args.train.molecule_learning_rate
+    wandb.config.logit_scale_learning_rate = args.train.logit_scale_learning_rate
 
 # Training loop
 for epoch in range(args.train.num_epochs):
@@ -72,7 +79,7 @@ for epoch in range(args.train.num_epochs):
         text_head_optimizer.zero_grad()
         molecule_head_optimizer.zero_grad()
         logit_scale_optimizer.zero_grad()
-        batch_molecules, batch_texts = batch["graphs"], batch["texts"]
+        batch_molecules, batch_texts = batch["graph"], batch["text"]
         batch_molecules = batch_molecules.to(device)
         # batch_texts = batch_texts.to(device)
 
@@ -96,7 +103,8 @@ for epoch in range(args.train.num_epochs):
 
         # Accumulate the loss for monitoring
         epoch_loss += l.item()
-        wandb.log({"epoch": epoch, "loss": epoch_loss, "loss_l": l.item()})
+        if args.wandb:
+            wandb.log({"epoch": epoch, "loss": epoch_loss, "loss_l": l.item()})
 
     # Print the average loss for the epoch
     print(

@@ -37,3 +37,5 @@ data:
 resume:
   text: nan # can be path of pth file is resume
   molecule: nan # can be path of pth file is resume
+
+wandb: 0
