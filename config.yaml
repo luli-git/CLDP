@@ -4,6 +4,7 @@ train:
   text_learning_rate: 0.0001
   molecule_learning_rate: 0.0001
   logit_scale_learning_rate: 0.0001
+  save_every: 100
 
 model:
   MolCLR:
@@ -19,6 +20,7 @@ model:
     out_dim: 512
     num_atom_type: 119
     num_chirality_tag: 3
+    save_folder: "MolCLR/ckpt/pretrained_gin/checkpoints" 
   text:
     tokenizer: "dmis-lab/biobert-base-cased-v1.1"
     pretrained_model: "dmis-lab/biobert-base-cased-v1.1"
@@ -31,11 +33,15 @@ wandb_project_name: "cldp"
 
 data:
   data_csv_path: "merged_description_smiles.csv"
-  batch_size: 64
+  batch_size: 384 # 448 is not working 
   shuffle: true
 
 resume:
   text: nan # can be path of pth file is resume
   molecule: nan # can be path of pth file is resume
-
+debug: 1
 wandb: 0
+
+skip_scheduler: 0
+lr_scheduler: "cosine"
+warmup: 782

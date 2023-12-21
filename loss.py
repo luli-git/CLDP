@@ -40,6 +40,7 @@ class ClipLoss(nn.Module):
         # nn.init.constant_(self.self.logit_scale_t, np.log(1 / 0.07))
         self.device = device
         self.to(device)
+
     def forward(
         self,
         drug_features,
@@ -47,7 +48,7 @@ class ClipLoss(nn.Module):
         drug_features_mlp=None,
         text_features_mlp=None,
     ):
-        print(self.logit_scale_t.is_leaf)
+        # print(self.logit_scale_t.is_leaf)
         # self.logit_scale_d = self.self.logit_scale_d
         # self.logit_scale_t = self.self.logit_scale_t
         if self.mlp_loss:
@@ -112,10 +113,10 @@ class ClipLoss(nn.Module):
                 if self.world_size > 1 and self.local_loss:
                     labels = labels + num_logits * self.rank
                 if self.cache_labels:
-                    self.labels[ self.device] = labels
+                    self.labels[self.device] = labels
                     self.prev_num_logits = num_logits
             else:  # self.prev_num_logits == num_logits and device in self.labels
-                labels = self.labels[ self.device]
+                labels = self.labels[self.device]
 
             if not self.weighted_loss:
                 total_loss = (
@@ -158,7 +159,7 @@ class ClipLoss(nn.Module):
                     mlp_loss=self.mlp_loss,
                 )
                 print("here")
-                print( print(self.logit_scale_t.is_leaf))
+                # print(self.logit_scale_t.is_leaf)
                 if self.local_loss:
                     logits_per_drug = (
                         self.logit_scale_d * drug_features @ all_text_features.T
@@ -177,15 +178,15 @@ class ClipLoss(nn.Module):
 
             # calculated ground-truth and cache if enabled
             num_logits = logits_per_drug.shape[0]
-            if self.prev_num_logits != num_logits or  self.device not in self.labels:
-                labels = torch.arange(num_logits, device= self.device, dtype=torch.long)
+            if self.prev_num_logits != num_logits or self.device not in self.labels:
+                labels = torch.arange(num_logits, device=self.device, dtype=torch.long)
                 if self.world_size > 1 and self.local_loss:
                     labels = labels + num_logits * self.rank
                 if self.cache_labels:
-                    self.labels[ self.device] = labels
+                    self.labels[self.device] = labels
                     self.prev_num_logits = num_logits
             else:  # self.prev_num_logits == num_logits and device in self.labels
-                labels = self.labels[ self.device]
+                labels = self.labels[self.device]
             if not self.weighted_loss:
                 total_loss = (
                     F.cross_entropy(logits_per_drug, labels)

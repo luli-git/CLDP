@@ -60,7 +60,7 @@ class GINet(nn.Module):
         self.emb_dim = args.model.MolCLR.emb_dim
         self.feat_dim = args.model.MolCLR.feat_dim
         self.drop_ratio = args.model.MolCLR.drop_ratio
-
+        self.name = "GINet"
         self.x_embedding1 = nn.Embedding(
             args.model.MolCLR.num_atom_type, args.model.MolCLR.emb_dim
         )
@@ -164,12 +164,13 @@ class BertMLPModel(nn.Module):
         additional_hidden_size = args.model.text.additional_hidden_size
         out_features = args.model.text.out_features
 
-        self.MLP = nn.Sequential(
+        self.pred_head = nn.Sequential(
             nn.Linear(self.text_model.config.hidden_size, additional_hidden_size),
             nn.ReLU(),
             nn.Linear(additional_hidden_size, out_features),
         )
         self.device = device
+        self.name = "BertMLPModel"
 
     def forward(self, text):
         # Tokenize the input text
@@ -178,7 +179,7 @@ class BertMLPModel(nn.Module):
         ).to(self.device)
         # Get the representation from the text model (bioBERT)
         text_features = self.text_model(**encoded_input).last_hidden_state.mean(dim=1)
-        logits = self.MLP(text_features)
+        logits = self.pred_head(text_features)
         return logits
 
     def freeze_bert(self):

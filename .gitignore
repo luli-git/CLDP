@@ -2,3 +2,6 @@
 /wandb/*
 *.pyc
 CLDP-2
+diagnoses_icd.csv/*
+prescriptions.csv/*
+merged_description_smiles.csv

@@ -7,12 +7,11 @@ import torch
 import torch.optim as optim
 from MolCLR.dataset.dataset import MoleculeDatasetWrapper
 import os
-
-# from utils import load_checkpoint
-
-
+from copy import deepcopy
+from utils import load_checkpoint, print_model_differences
 from models import GINet, BertMLPModel
 from loss import ClipLoss
+from training.scheduler import cosine_lr, const_lr, const_lr_cooldown
 
 
 # Set the random seeds for reproducibility
@@ -71,10 +70,102 @@ if args.wandb:
     wandb.config.molecule_learning_rate = args.train.molecule_learning_rate
     wandb.config.logit_scale_learning_rate = args.train.logit_scale_learning_rate
 
+# create scheduler if train
+scheduler = None
+if (
+    text_head_optimizer is not None
+    and molecule_head_optimizer is not None
+    and logit_scale_optimizer is not None
+):
+    total_steps = args.data.batch_size * args.train.num_epochs
+    if args.lr_scheduler == "cosine":
+        scheduler = cosine_lr(
+            text_head_optimizer, args.train.text_learning_rate, args.warmup, total_steps
+        )
+        scheduler_m = cosine_lr(
+            molecule_head_optimizer,
+            args.train.molecule_learning_rate,
+            args.warmup,
+            total_steps,
+        )
+        scheduler_l = cosine_lr(
+            logit_scale_optimizer,
+            args.train.logit_scale_learning_rate,
+            args.warmup,
+            total_steps,
+        )
+    elif args.lr_scheduler == "const":
+        scheduler = const_lr(
+            text_head_optimizer, args.train.text_learning_rate, args.warmup, total_steps
+        )
+        scheduler_m = const_lr(
+            molecule_head_optimizer,
+            args.train.molecule_learning_rate,
+            args.warmup,
+            total_steps,
+        )
+        scheduler_l = const_lr(
+            logit_scale_optimizer,
+            args.train.logit_scale_learning_rate,
+            args.warmup,
+            total_steps,
+        )
+
+    elif args.lr_scheduler == "const-cooldown":
+        assert (
+            args.epochs_cooldown is not None
+        ), "Please specify the number of cooldown epochs for this lr schedule."
+        cooldown_steps = (
+            args.data.batch_size // args.accum_freq
+        ) * args.epochs_cooldown
+        scheduler = const_lr_cooldown(
+            text_head_optimizer,
+            args.train.text_learning_rate,
+            args.warmup,
+            total_steps,
+            cooldown_steps,
+            args.lr_cooldown_power,
+            args.lr_cooldown_end,
+        )
+        scheduler_m = const_lr_cooldown(
+            molecule_head_optimizer,
+            args.train.molecule_learning_rate,
+            args.warmup,
+            total_steps,
+            cooldown_steps,
+            args.lr_cooldown_power,
+            args.lr_cooldown_end,
+        )
+        scheduler_l = const_lr_cooldown(
+            logit_scale_optimizer,
+            args.train.logit_scale_learning_rate,
+            args.warmup,
+            total_steps,
+            cooldown_steps,
+            args.lr_cooldown_power,
+            args.lr_cooldown_end,
+        )
+
+
 # Training loop
 for epoch in range(args.train.num_epochs):
     epoch_loss = 0.0
+    # save model weights
+    if args.debug:
+        if epoch == 0:
+            molecule_model0 = deepcopy(molecule_model)
+            text_model0 = deepcopy(text_model)
+        if epoch == 1:
+            print_model_differences(molecule_model0, molecule_model)
+            # print_model_differences(text_model0, text_model)
+
     for bn, batch in enumerate(dataloader):
+        i_accum = bn  # // args.accum_freq
+        step = args.data.batch_size * epoch + i_accum
+
+        if not args.skip_scheduler:
+            scheduler(step)
+
         # Zero the gradients
         text_head_optimizer.zero_grad()
         molecule_head_optimizer.zero_grad()
@@ -91,7 +182,7 @@ for epoch in range(args.train.num_epochs):
         batch_text_feat = batch_text_feat / batch_text_feat.norm(dim=1, keepdim=True)
         # Compute the model's loss
         l = loss(batch_molecule_feat, batch_text_feat)
-        print(l)
+        # print(l)
 
         # Backpropagate the loss
         l.backward()
