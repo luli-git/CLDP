@@ -1,10 +1,14 @@
 # config.yaml
 train:
-  num_epochs: 10
-  text_learning_rate: 0.0001
-  molecule_learning_rate: 0.0001
-  logit_scale_learning_rate: 0.0001
-  save_every: 100
+  num_epochs: 400
+  text_learning_rate: 0.001
+  molecule_learning_rate: 0.001
+  logit_scale_learning_rate: 0.001
+  min_lr: 0.000001
+  save_frequency: 1
+  delete_previous_checkpoint: 1
+  save_most_recent: 1
+  
 
 model:
   MolCLR:
@@ -28,20 +32,24 @@ model:
     out_features: 512
  
 warmup: 2000
-wandb_project_name: "cldp"
+wandb_project_name: "cldp2"
 
 
 data:
   data_csv_path: "merged_description_smiles.csv"
-  batch_size: 384 # 448 is not working 
+  batch_size:  384 # 448 is not working 
   shuffle: true
 
-resume:
-  text: nan # can be path of pth file is resume
-  molecule: nan # can be path of pth file is resume
+resume: "latest"
 debug: 1
-wandb: 0
+wandb: 1
 
 skip_scheduler: 0
 lr_scheduler: "cosine"
 warmup: 782
+
+remote: 0
+# resume: "latest"
+logs: "logs"
+name: "CLDP"
+save_logs: 1

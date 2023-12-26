@@ -5,3 +5,7 @@ CLDP-2
 diagnoses_icd.csv/*
 prescriptions.csv/*
 merged_description_smiles.csv
+model_differences.txt
+*.pth
+*.pt
+*Untitled*
