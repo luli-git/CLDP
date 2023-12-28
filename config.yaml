@@ -1,6 +1,6 @@
 # config.yaml
 train:
-  num_epochs: 400
+  num_epochs: 1500
   text_learning_rate: 0.001
   molecule_learning_rate: 0.001
   logit_scale_learning_rate: 0.001
@@ -31,25 +31,26 @@ model:
     additional_hidden_size: 512
     out_features: 512
  
-warmup: 2000
+
 wandb_project_name: "cldp2"
 
 
 data:
   data_csv_path: "merged_description_smiles.csv"
-  batch_size:  384 # 448 is not working 
+  batch_size:  320 # 640, 448 is not working 
   shuffle: true
 
 resume: "latest"
-debug: 1
-wandb: 1
+debug: 0
+wandb: 0
 
 skip_scheduler: 0
 lr_scheduler: "cosine"
-warmup: 782
+warmup: 782 #782
 
 remote: 0
 # resume: "latest"
 logs: "logs"
 name: "CLDP"
 save_logs: 1
+seed: 42

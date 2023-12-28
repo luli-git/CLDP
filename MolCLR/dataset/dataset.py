@@ -133,7 +133,8 @@ class MoleculeDatasetWrapper(object):
         self.valid_size = valid_size
 
     def __len__(self):
-        return self.batch_size
+        train_dataset = MoleculeDataset(data_csv_path=self.data_path)
+        return len(train_dataset)
 
     def get_data_loaders(self):
         train_dataset = MoleculeDataset(data_csv_path=self.data_path)
