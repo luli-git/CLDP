@@ -1,13 +1,14 @@
 # config.yaml
 train:
-  num_epochs: 1500
+  num_epochs: 5000
   text_learning_rate: 0.001
   molecule_learning_rate: 0.001
   logit_scale_learning_rate: 0.001
-  min_lr: 0.000001
+  min_lr: 0.0001
   save_frequency: 1
   delete_previous_checkpoint: 1
   save_most_recent: 1
+  save_best: 1
   
 
 model:
@@ -37,12 +38,12 @@ wandb_project_name: "cldp2"
 
 data:
   data_csv_path: "merged_description_smiles.csv"
-  batch_size:  320 # 640, 448 is not working 
+  batch_size:  640 # 640, 448 is not working 
   shuffle: true
 
 resume: "latest"
 debug: 0
-wandb: 0
+wandb: 1
 
 skip_scheduler: 0
 lr_scheduler: "cosine"

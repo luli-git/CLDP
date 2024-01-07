@@ -9,6 +9,9 @@ import subprocess
 import re
 import torch.nn as nn
 from copy import deepcopy
+import wandb
+import fsspec
+
 # Function to save checkpoint
 def save_checkpoint(state, filename="checkpoint.pth.tar"):
     torch.save(state, filename)
@@ -200,3 +203,52 @@ def print_weights_and_gradients(model: nn.Module, print_grad=False, print_value=
                     print(f"Gradient of {name}: \n {param.grad}")
                 else:
                     print(f"Gradient of {name}: Not computed yet or no gradient")
+
+ 
+def pt_load(file_path, map_location=None):
+    # if file_path.startswith("s3"):
+    #     logging.info("Loading remote checkpoint, which may take a bit.")
+    of = fsspec.open(file_path, "rb")
+    with of as f:
+        out = torch.load(f, map_location=map_location)
+    return out
+
+
+
+def save_tensor_heatmap(tensor, draw_label=True, file_path="heat_map.png"):
+    """
+    Saves a heatmap of the given tensor to a PNG file and draws a blue line on the diagonal for comparison.
+
+    Parameters:
+    tensor (torch.Tensor): The tensor to create a heatmap from.
+    file_path (str): The file path where the heatmap PNG will be saved.
+    """
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(20, 20))
+    plt.imshow(tensor, cmap='hot', interpolation='nearest')
+    plt.colorbar()
+    if draw_label:
+        # Drawing a blue line on the diagonal
+        plt.plot(np.arange(tensor.shape[0]), np.arange(tensor.shape[1]), color='blue', linewidth=1)
+
+    plt.title('Heatmap of Tensor with Diagonal Line')
+    plt.savefig(file_path)
+    plt.close()
+
+def count_rows_with_max_on_diagonal(tensor):
+    """
+    Counts the number of rows in the tensor where the diagonal element is the maximum in that row.
+
+    Parameters:
+    tensor (torch.Tensor): The tensor to analyze.
+
+    Returns:
+    int: The number of rows with the diagonal element being the maximum of that row.
+    """
+    # Extracting the diagonal elements
+    diagonal_elements = tensor.diag()
+
+    # Counting rows where diagonal element is the maximum in that row
+    count = torch.sum(torch.eq(tensor.max(dim=1).values, diagonal_elements)).item()
+
+    return count

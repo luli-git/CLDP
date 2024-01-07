@@ -15,7 +15,10 @@ from models import GINet, BertMLPModel
 from loss import ClipLoss
 from training.scheduler import cosine_lr, const_lr, const_lr_cooldown
 from tqdm import tqdm
-from utils import eval_
+from utils import eval_,   pt_load
+
+
+
 resume_latest = args.resume == "latest"
 log_base_path = os.path.join(args.logs, args.name)
 args.checkpoint_path = os.path.join(log_base_path, "checkpoints")
@@ -26,18 +29,11 @@ if not os.path.exists(args.checkpoint_path):
 if resume_latest:
     resume_from = None
     checkpoint_path = args.checkpoint_path
-
-    # Checking for existing checkpoint via master rank only. It is possible for
-    # different rank processes to see different files if a shared file-system is under
-    # stress, however it's very difficult to fully work around such situations.
     if args.train.save_most_recent:
-        # if --save-most-recent flag is set, look for latest at a fixed filename
         resume_from = os.path.join(checkpoint_path, LATEST_CHECKPOINT_NAME)
         if not os.path.exists(resume_from):
-            # If no latest checkpoint has been saved yet, don't try to resume
             resume_from = None
     else:
-        # otherwise, list checkpoint dir contents and pick the newest checkpoint
         resume_from = get_latest_checkpoint(
             checkpoint_path, remote=args.remote_sync is not None
         )
@@ -51,8 +47,8 @@ if resume_latest:
 
 # Set the random seeds for reproducibility
 torch.backends.cudnn.deterministic = True
-# set random seed for numpy, torch, cuda, and cudnn, python random
 setup_seed(args.seed)
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 state_dict = torch.load(
@@ -76,31 +72,9 @@ print(
 )
 # Load the tokenizer and model
 text_model = BertMLPModel(args, device).to(device)
-# if args.resume.molecule and os.path.isfile(args.resume.molecule):
-#     print(f"Resuming training from {args.resume.molecule}")
-#     molecule_state_dict = torch.load(args.resume.molecule)
-#     molecule_model.load_state_dict(molecule_state_dict, strict=False)
 
-# if args.resume.text and os.path.isfile(args.resume.text):
-#     print(f"Resuming training from {args.resume.text}")
-#     text_state_dict = torch.load(args.resume.text)
-#     text_model.load_state_dict(text_state_dict, strict=False)
-# optionally resume from a checkpoint
 start_epoch = 0
-
-import fsspec
-
-
-def pt_load(file_path, map_location=None):
-    if file_path.startswith("s3"):
-        logging.info("Loading remote checkpoint, which may take a bit.")
-    of = fsspec.open(file_path, "rb")
-    with of as f:
-        out = torch.load(f, map_location=map_location)
-    return out
-
-
-
+ 
 loss = ClipLoss(device=device, mlp_loss=False)
 text_head_optimizer = optim.Adam(
     text_model.parameters(), lr=args.train.text_learning_rate
@@ -123,19 +97,7 @@ if args.resume is not None:
         #     sd = {k[len("module.") :]: v for k, v in sd.items()}
         molecule_model.load_state_dict(molecule_model_sd)
         text_model.load_state_dict(text_model_sd)
-        # # Load the entire model objects
-        # molecule_model = checkpoint["molecule_model"].to(device)
-        # text_model = checkpoint["text_model"].to(device)
-        # text_head_optimizer = pickle.loads(checkpoint["text_head_optimizer"])
-        # molecule_head_optimizer = pickle.loads(checkpoint["molecule_head_optimizer"])
-        # loss = checkpoint["loss_module"].to(device)
-        # logit_scale_optimizer = pickle.loads(checkpoint["logit_scale_optimizer"])
-        # loss.logit_scale_d = checkpoint["loss_module"].logit_scale_d
-        # loss.logit_scale_t = checkpoint["loss_module"].logit_scale_t
-
-        # loss.load_state_dict(checkpoint["loss_sd"])
-        # loss.logit_scale_t.load_state_dict(checkpoint["loss_logit_scale_t"])
-        
+        loss.load_state_dict(checkpoint["loss_sd"])        
         if molecule_head_optimizer is not None:
             molecule_head_optimizer.load_state_dict(
                 checkpoint["molecule_head_optimizer_sd"]
@@ -156,11 +118,12 @@ text_model.freeze_bert()
 
 if args.wandb:
     wandb.init(project=args.wandb_project_name)
-    wandb.log(args)
+    # wandb.log(args)
     wandb.config.batch_size = args.data.batch_size
     wandb.config.text_learning_rate = args.train.text_learning_rate
     wandb.config.molecule_learning_rate = args.train.molecule_learning_rate
     wandb.config.logit_scale_learning_rate = args.train.logit_scale_learning_rate
+
 
 # create scheduler if train
 scheduler = None
@@ -169,7 +132,6 @@ if (
     and molecule_head_optimizer is not None
     and logit_scale_optimizer is not None
 ):
-    
     total_samples = len(dataset)
     batch_size = args.data.batch_size  # Replace with your actual batch size variable
 
@@ -258,23 +220,17 @@ if (
         )
 
 original_model = molecule_model
-
+best_loss = float("inf")
 # Training loop
 for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
     epoch_loss = 0.0
-    # save model weights
-    # if args.debug:
-    #     if epoch == 0:
-    #         molecule_model0 = deepcopy(molecule_model)
-    #         text_model0 = deepcopy(text_model)
-    #     if epoch == 1:
-    #         print_model_differences(molecule_model0, molecule_model)
-    #         # print_model_differences(text_model0, text_model)
+    running_acc_t = 0.0
+    running_acc_d = 0.0
+    running_acc_t_d = 0.0
     for bn, batch in enumerate(dataloader):
         i_accum = bn  # // args.accum_freq
         step = (num_batches_per_epoch) * epoch + i_accum
-
-        # step = 640 * epoch + i_accum
+ 
         if not args.skip_scheduler:
             scheduler(step)
             scheduler_m(step)
@@ -287,7 +243,7 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
         logit_scale_optimizer.zero_grad()
         batch_molecules, batch_texts = batch["graph"], batch["text"]
         batch_molecules = batch_molecules.to(device)
-        # batch_texts = batch_texts.to(device)
+ 
 
         batch_molecule_feat = molecule_model(batch_molecules)
         batch_molecule_feat = batch_molecule_feat[1] / batch_molecule_feat[1].norm(
@@ -296,11 +252,11 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
         batch_text_feat = text_model(batch_texts)
         batch_text_feat = batch_text_feat / batch_text_feat.norm(dim=1, keepdim=True)
         # Compute the model's loss
-        l = loss(batch_molecule_feat, batch_text_feat)
-
-
-
-        # print(l)
+        return_dict = loss(batch_molecule_feat, batch_text_feat)
+        l = return_dict["total_loss"]
+        acc_d = return_dict["acc_d"]
+        acc_t = return_dict["acc_t"]
+        acc_t_d = return_dict["acc_t_d"]
 
         # Backpropagate the loss
         l.backward()
@@ -312,6 +268,9 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
 
         # Accumulate the loss for monitoring
         epoch_loss += l.item()
+        running_acc_t += acc_t
+        running_acc_d += acc_d
+        running_acc_t_d += acc_t_d
 
     if args.debug:
         model_save_path = "/u/tianyuzh/CLDP/logs/CLDP/molecule_model_params.pth"
@@ -338,17 +297,10 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
             "name": args.name,
             "molecule_model_state_dict": molecule_model.state_dict(),
             "text_model_state_dict": text_model.state_dict(),
-            "molecule_model": molecule_model,
-            "original_molecule_model": original_model,
-            "loss_module": loss, 
             "loss_sd": loss.state_dict(),
-            "text_model": text_model,
             "text_head_optimizer_sd": text_head_optimizer.state_dict(),
             "molecule_head_optimizer_sd": molecule_head_optimizer.state_dict(),
             "logit_scale_optimizer_sd": logit_scale_optimizer.state_dict(),
-            "text_head_optimizer": pickle.dumps(text_head_optimizer),
-            "molecule_head_optimizer": pickle.dumps(molecule_head_optimizer),
-            "logit_scale_optimizer": pickle.dumps(logit_scale_optimizer),
             "step": step + 1
         }
         # if scaler is not None:
@@ -362,9 +314,9 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
                 checkpoint_dict,
                 os.path.join(args.checkpoint_path, f"epoch_{completed_epoch}.pt"),
             )
-            checkpoint1000 = torch.load(os.path.join(args.checkpoint_path, f"epoch_{completed_epoch}.pt"))
-            eval_loss,  eval_loss_orig = eval_(checkpoint1000, dataloader, loss, "cuda", molecule_model, text_model )
-            print(eval_loss, eval_loss_orig)
+            # checkpoint1000 = torch.load(os.path.join(args.checkpoint_path, f"epoch_{completed_epoch}.pt"))
+            # eval_loss,  eval_loss_orig = eval_(checkpoint1000, dataloader, loss, "cuda", molecule_model, text_model )
+            # print(eval_loss, eval_loss_orig)
 
             # print(eval_loss)
             # checkpoint1 = torch.load("/u/tianyuzh/CLDP/saved_checkpoints/epoch_1000.pt")
@@ -387,14 +339,30 @@ for epoch in tqdm(range(start_epoch, args.train.num_epochs)):
             )
             torch.save(checkpoint_dict, tmp_save_path)
             os.replace(tmp_save_path, latest_save_path)
+
+        if args.train.save_best:
+            if epoch_loss < best_loss:
+                best_loss = epoch_loss
+                best_epoch = completed_epoch
+                best_checkpoint_path = os.path.join(
+                    args.checkpoint_path, "best_checkpoint.pt"
+                )
+                torch.save(checkpoint_dict, best_checkpoint_path)
+                print(f"Best checkpoint saved to {best_checkpoint_path}")
     
     if args.wandb:
         wandb.log({"loss": epoch_loss / len(dataloader),
                   "learning_rate":  molecule_head_optimizer.param_groups[0]["lr"],
                   "text_learning_rate": text_head_optimizer.param_groups[0]["lr"],
-                  "logit_scale_learning_rate": logit_scale_optimizer.param_groups[0]["lr"]})
-
+                  "logit_scale_learning_rate": logit_scale_optimizer.param_groups[0]["lr"],
+                  "acc_t": running_acc_t / len(dataloader),
+                  "acc_d": running_acc_d / len(dataloader),
+                  "acc_t_d": running_acc_t_d / len(dataloader)}
+        )
+                
+        # wandb.log(args)
     # Print the average loss for the epoch
     print(
-        f"Epoch {epoch+1}/{args.train.num_epochs}, Loss: {epoch_loss / len(dataloader)}"
+        f"Epoch {epoch+1}/{args.train.num_epochs}, Loss: {epoch_loss / len(dataloader):.5f}, acc_t: {running_acc_t / len(dataloader):.5f}, acc_d: {running_acc_d / len(dataloader):.5f}, acc_t_d: {running_acc_t_d / len(dataloader):.5f}"
     )
+

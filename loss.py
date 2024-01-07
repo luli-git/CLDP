@@ -2,7 +2,7 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 import numpy as np
-
+from utils import count_rows_with_max_on_diagonal
 
 def gather_features(**kwargs):
     pass
@@ -211,4 +211,12 @@ class ClipLoss(nn.Module):
                     F.cross_entropy(logits_per_drug, labels, weight=text_weight)
                     + F.cross_entropy(logits_per_text, labels, weight=drug_weight)
                 ) / 2
-        return total_loss
+        acc_t = count_rows_with_max_on_diagonal(F.softmax(logits_per_text,dim=0))/logits_per_text.shape[0]
+        acc_d = count_rows_with_max_on_diagonal(F.softmax(logits_per_drug,dim=0))/logits_per_drug.shape[0]
+        return_dict = {
+            'total_loss': total_loss,
+            'acc_t': acc_t,
+            'acc_d': acc_d,
+            'acc_t_d': (acc_t + acc_d) / 2
+        }
+        return return_dict
